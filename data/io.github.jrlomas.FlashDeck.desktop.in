@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Flash Deck
+Comment=Program, inspect, and manage STM32 targets
+Exec=/usr/bin/python3 "@APP_PATH@"
+Icon=io.github.jrlomas.FlashDeck
+Terminal=false
+Categories=Development;Electronics;
+Keywords=STM32;ST-LINK;DFU;UART;firmware;flash;microcontroller;
+StartupNotify=true
+StartupWMClass=io.github.jrlomas.FlashDeck
+DBusActivatable=false

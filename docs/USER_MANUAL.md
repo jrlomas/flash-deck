@@ -52,6 +52,18 @@ cd flash-deck
 ./stm32-flash-deck.py
 ```
 
+### Install the Ubuntu launcher and icon
+
+From the cloned repository:
+
+```bash
+./install.sh
+```
+
+This installs the application for the current user under `~/.local/share/flash-deck`, installs the scalable MCU icon into the user icon theme, and creates a matching desktop entry. Launch **Flash Deck** from Ubuntu's application menu so GNOME can associate the running window with its taskbar icon.
+
+Run `./install.sh` again after updating the repository to refresh the installed application.
+
 For a nonstandard CubeProgrammer location:
 
 ```bash

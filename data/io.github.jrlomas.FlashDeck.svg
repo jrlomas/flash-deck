@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="background" x1="18" y1="14" x2="110" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff5277"/>
+      <stop offset="0.52" stop-color="#df244d"/>
+      <stop offset="1" stop-color="#8f1236"/>
+    </linearGradient>
+    <linearGradient id="chip" x1="41" y1="37" x2="89" y2="92" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#35353d"/>
+      <stop offset="1" stop-color="#17171c"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#350713" flood-opacity=".42"/>
+    </filter>
+  </defs>
+  <rect x="6" y="6" width="116" height="116" rx="27" fill="url(#background)"/>
+  <path d="M25 25h26M77 103h26" stroke="#ff9bb0" stroke-width="3" stroke-linecap="round" opacity=".42"/>
+  <g fill="#ffe8ed">
+    <rect x="20" y="36" width="18" height="6" rx="3"/><rect x="20" y="50" width="18" height="6" rx="3"/>
+    <rect x="20" y="64" width="18" height="6" rx="3"/><rect x="20" y="78" width="18" height="6" rx="3"/>
+    <rect x="20" y="92" width="18" height="6" rx="3"/><rect x="90" y="36" width="18" height="6" rx="3"/>
+    <rect x="90" y="50" width="18" height="6" rx="3"/><rect x="90" y="64" width="18" height="6" rx="3"/>
+    <rect x="90" y="78" width="18" height="6" rx="3"/><rect x="90" y="92" width="18" height="6" rx="3"/>
+    <rect x="36" y="20" width="6" height="18" rx="3"/><rect x="50" y="20" width="6" height="18" rx="3"/>
+    <rect x="64" y="20" width="6" height="18" rx="3"/><rect x="78" y="20" width="6" height="18" rx="3"/>
+    <rect x="92" y="20" width="6" height="18" rx="3"/><rect x="36" y="90" width="6" height="18" rx="3"/>
+    <rect x="50" y="90" width="6" height="18" rx="3"/><rect x="64" y="90" width="6" height="18" rx="3"/>
+    <rect x="78" y="90" width="6" height="18" rx="3"/><rect x="92" y="90" width="6" height="18" rx="3"/>
+  </g>
+  <rect x="35" y="35" width="58" height="58" rx="13" fill="url(#chip)" stroke="#fff5f7" stroke-width="3" filter="url(#shadow)"/>
+  <circle cx="46" cy="46" r="3.5" fill="#ff5277"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M48 73V57h12l6 7h14v16H64l-6-7H48Z" stroke="#fff5f7" stroke-width="4"/>
+    <path d="M60 57v10h20M58 73h8V64" stroke="#ff5277" stroke-width="3"/>
+  </g>
+</svg>

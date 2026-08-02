@@ -26,6 +26,8 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 APP_ID = "io.github.jrlomas.FlashDeck"
 APP_NAME = "Flash Deck"
+GLib.set_prgname(APP_ID)
+GLib.set_application_name(APP_NAME)
 DEFAULT_CLI = Path.home() / "STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI"
 INSTALL_ROOT = DEFAULT_CLI.parent.parent
 PROFILE_PATH = Path.home() / ".config/flash-deck/profiles.json"
@@ -85,6 +87,7 @@ class FlashDeck(Adw.Application):
 
     def build_window(self):
         self.window = Adw.ApplicationWindow(application=self, title=APP_NAME, default_width=1160, default_height=980)
+        self.window.set_icon_name(APP_ID)
         self.window.set_size_request(840, 620)
 
         toolbar = Adw.ToolbarView()

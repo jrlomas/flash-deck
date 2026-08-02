@@ -37,6 +37,14 @@ cd flash-deck
 ./stm32-flash-deck.py
 ```
 
+To install Flash Deck in your Ubuntu application menu with its MCU icon:
+
+```bash
+./install.sh
+```
+
+Launch **Flash Deck** from the application menu. The installed desktop entry and GTK application ID match, so Ubuntu uses the Flash Deck icon in the dock, taskbar, and application overview.
+
 Flash Deck automatically checks:
 
 ```text
