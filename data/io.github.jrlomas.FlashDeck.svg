@@ -31,7 +31,7 @@
   <rect x="35" y="35" width="58" height="58" rx="13" fill="url(#chip)" stroke="#fff5f7" stroke-width="3" filter="url(#shadow)"/>
   <circle cx="46" cy="46" r="3.5" fill="#ff5277"/>
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M48 73V57h12l6 7h14v16H64l-6-7H48Z" stroke="#fff5f7" stroke-width="4"/>
-    <path d="M60 57v10h20M58 73h8V64" stroke="#ff5277" stroke-width="3"/>
+    <path d="M64 76V51M53 61l11-11 11 11" stroke="#fff5f7" stroke-width="5"/>
+    <path d="M49 73v9h30v-9" stroke="#ff5277" stroke-width="4"/>
   </g>
 </svg>
