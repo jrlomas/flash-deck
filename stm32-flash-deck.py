@@ -807,6 +807,7 @@ class FlashDeck(Adw.Application):
     def on_device_selected(self, _selector, _detail):
         self.set_disconnected()
         self.update_settings_for_device()
+        self.check_probe_firmware_update()
 
     def update_settings_for_device(self):
         selected = self.probe_selector.get_selected()
@@ -861,6 +862,7 @@ class FlashDeck(Adw.Application):
         failed = code != 0 or re.search(r"(?:DEV_[A-Z_]+|Unable to get core ID|\bError:)", clean, re.IGNORECASE)
         if failed:
             self.set_disconnected(); self.connection_revealer.set_reveal_child(True); self.toast("Connection failed")
+            self.check_probe_firmware_update()
             return
         self.connected = True
         self.target_status_icon.set_from_icon_name("network-wired-symbolic")
@@ -887,7 +889,8 @@ class FlashDeck(Adw.Application):
         self.probe_update_available_serial = None
         self.probe_update_button.set_visible(False)
         self.probe_update_button.set_sensitive(False)
-        if not self.connected or device.get("kind") != "stlink" or not self.stlink_updater:
+        if (device.get("kind") != "stlink" or not self.stlink_updater or
+                not device.get("serial") or self.running):
             return
         serial = device.get("serial")
         command = self.stlink_updater_command(serial, "-checkVer")
@@ -909,7 +912,7 @@ class FlashDeck(Adw.Application):
 
     def finish_probe_firmware_update_check(self, code, output, serial, generation):
         device = self.selected_device() or {}
-        if (generation != self.probe_update_check_generation or not self.connected or
+        if (generation != self.probe_update_check_generation or
                 device.get("kind") != "stlink" or device.get("serial") != serial):
             return False
         clean = self.clean_cli_output(output)
@@ -929,7 +932,7 @@ class FlashDeck(Adw.Application):
     def on_probe_firmware_update(self, _button):
         device = self.selected_device() or {}
         serial = device.get("serial")
-        if (not self.connected or device.get("kind") != "stlink" or
+        if (device.get("kind") != "stlink" or
                 serial != self.probe_update_available_serial):
             self.probe_update_button.set_visible(False)
             self.toast("The selected probe no longer has an available update")
@@ -953,13 +956,17 @@ class FlashDeck(Adw.Application):
         if response != "update":
             return
         device = self.selected_device() or {}
-        if not self.connected or device.get("kind") != "stlink" or device.get("serial") != serial:
+        if device.get("kind") != "stlink" or device.get("serial") != serial:
             self.toast("The selected probe changed; update canceled")
             return
         command = self.stlink_updater_command(serial, "-update")
         if not command or self.running:
             self.toast("ST-LINK updater is unavailable or another operation is running")
             return
+        # Updating re-enumerates the probe and does not require an attached
+        # target. Drop target-only UI state before handing the probe to the
+        # bundled updater.
+        self.set_disconnected()
         self.running = True
         self.probe_update_button.set_sensitive(False)
         self.disconnect_button.set_sensitive(False)
@@ -1008,6 +1015,7 @@ class FlashDeck(Adw.Application):
         self.device_info_revealer.set_reveal_child(False); self.target_actions.set_visible(False)
         self.update_settings_for_device()
         self.set_status("Disconnected", "neutral")
+        self.check_probe_firmware_update()
         self.append_log("Target disconnected.\n")
 
     def populate_target_info(self, output):
