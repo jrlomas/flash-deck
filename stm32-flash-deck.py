@@ -980,11 +980,11 @@ class FlashDeck(Adw.Application):
         self.probe_update_button.set_icon_name("dialog-warning-symbolic")
         self.probe_update_button.set_visible(True)
         self.probe_update_button.set_sensitive(True)
-        self.probe_update_button.set_tooltip_text("Official firmware update unavailable for this probe")
+        self.probe_update_button.set_tooltip_text("Clone serial repair required before firmware update")
         self.append_log(
-            f"\n⚠ ST-LINK/V2 {serial} has a synthetic USB serial and does not enter "
-            "ST’s supported firmware loader. It can program targets, but cannot safely "
-            "receive ST’s official probe firmware.\n"
+            f"\nWARNING: ST-LINK/V2 {serial} has a shared synthetic USB serial. Flash Deck's "
+            "serial-only updater cannot safely isolate it from identical probes. Use the "
+            "topology-isolated scripts/stlink-v2-clone-serial.zsh repair workflow first.\n"
         )
 
     def on_probe_firmware_update(self, _button):
@@ -994,11 +994,11 @@ class FlashDeck(Adw.Application):
                 serial == self.probe_update_unsupported_serial):
             dialog = Adw.MessageDialog.new(
                 self.window,
-                "Official update unavailable",
-                "This V2 reports a synthetic USB serial and fails ST’s firmware-loader transition. "
-                "That normally identifies a clone or another nonstandard V2 implementation.\n\n"
-                "It can still be used to flash targets, but installing ST’s closed probe firmware "
-                "is not supported or safe on this hardware."
+                "Unique serial required",
+                "This V2 reports a synthetic USB serial shared by many clone probes. A serial-only "
+                "update cannot guarantee that it selected the intended physical device.\n\n"
+                "Use scripts/stlink-v2-clone-serial.zsh to assign a unique serial through an "
+                "isolated USB topology. The probe can then be selected normally by debugging tools."
             )
             dialog.add_response("done", "Done")
             dialog.set_default_response("done"); dialog.set_close_response("done")

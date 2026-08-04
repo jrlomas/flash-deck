@@ -69,6 +69,20 @@ Then:
 
 See the [Flash Deck User Manual](docs/USER_MANUAL.md) for complete operating instructions, safety notes, production workflows, and troubleshooting.
 
+## ST-LINK/V2 clone serial repair
+
+The experimental `scripts/stlink-v2-clone-serial.zsh` utility can assign a
+unique 24-character hexadecimal serial to a standalone ST-LINK/V2 clone while
+preserving compatibility with CubeProgrammer and OpenOCD. It isolates one exact
+USB topology with `bwrap`, verifies DFU v1 before writing, and requires explicit
+confirmation. Run the script with `--help` for the guarded workflow.
+
+The utility does not redistribute ST firmware. It builds a private updater from
+the locally installed CubeProgrammer package and keeps generated artifacts in
+the ignored `build/` directory. It also requires
+[`lujji/st-decrypt`](https://github.com/lujji/st-decrypt), either cloned under
+`tools/st-decrypt` or supplied through `STLINK_DECRYPTOR_JAR`.
+
 ## Local data
 
 - Profiles: `~/.config/flash-deck/profiles.json`

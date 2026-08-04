@@ -1,3 +1,5 @@
+/build/
+/tools/st-decrypt/
 __pycache__/
 *.py[cod]
 *.log
