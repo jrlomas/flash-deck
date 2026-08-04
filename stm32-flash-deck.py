@@ -890,11 +890,12 @@ class FlashDeck(Adw.Application):
         device = self.selected_device() or {}
         self.probe_update_available_serial = None
         self.probe_update_requires_restart_serial = None
-        self.probe_update_button.set_visible(False)
+        self.probe_update_button.set_visible(device.get("kind") == "stlink")
         self.probe_update_button.set_sensitive(False)
         if (device.get("kind") != "stlink" or not self.stlink_updater or
                 not device.get("serial") or self.running):
             return
+        self.probe_update_button.set_tooltip_text("Checking ST-LINK firmware…")
         serial = device.get("serial")
         command = self.stlink_updater_command(serial, "-checkVer")
         if not command:
@@ -920,7 +921,7 @@ class FlashDeck(Adw.Application):
             return False
         self.probe_update_available_serial = None
         self.probe_update_requires_restart_serial = None
-        self.probe_update_button.set_visible(False)
+        self.probe_update_button.set_visible(True)
         self.probe_update_button.set_sensitive(False)
         clean = self.clean_cli_output(output)
         available = self.probe_firmware_update_is_available(code, clean)
@@ -944,8 +945,12 @@ class FlashDeck(Adw.Application):
                 "before its firmware can be checked\n"
             )
         elif code == 0 and "up to date" in clean.lower():
+            self.probe_update_button.set_sensitive(True)
+            self.probe_update_button.set_tooltip_text("ST-LINK firmware is up to date; click to check again")
             self.append_log(f"\n✓ ST-LINK firmware is up to date for {serial}\n")
         elif clean.strip():
+            self.probe_update_button.set_sensitive(True)
+            self.probe_update_button.set_tooltip_text("Could not check ST-LINK firmware; click to retry")
             self.append_log(f"\n⚠ Could not check ST-LINK firmware for {serial}\n{clean.rstrip()}\n")
         return False
 
@@ -974,8 +979,12 @@ class FlashDeck(Adw.Application):
             return
         if (device.get("kind") != "stlink" or
                 serial != self.probe_update_available_serial):
-            self.probe_update_button.set_visible(False)
-            self.toast("The selected probe no longer has an available update")
+            if device.get("kind") == "stlink" and serial:
+                self.check_probe_firmware_update()
+                self.toast("Checking ST-LINK firmware…")
+            else:
+                self.probe_update_button.set_visible(False)
+                self.toast("Select an ST-LINK probe first")
             return
         board = device.get("board", "ST-LINK")
         firmware = device.get("firmware", "unknown")
