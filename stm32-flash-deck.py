@@ -71,6 +71,7 @@ class FlashDeck(Adw.Application):
         self.devices = []
         self.connected = False
         self.probe_update_available_serial = None
+        self.probe_update_requires_restart_serial = None
         self.probe_update_check_generation = 0
         self.running = False
         self.profiles = self.load_profiles()
@@ -833,6 +834,7 @@ class FlashDeck(Adw.Application):
         self.connected = False
         self.probe_update_check_generation += 1
         self.probe_update_available_serial = None
+        self.probe_update_requires_restart_serial = None
         if hasattr(self, "probe_update_button"):
             self.probe_update_button.set_visible(False)
             self.probe_update_button.set_sensitive(False)
@@ -887,6 +889,7 @@ class FlashDeck(Adw.Application):
     def check_probe_firmware_update(self):
         device = self.selected_device() or {}
         self.probe_update_available_serial = None
+        self.probe_update_requires_restart_serial = None
         self.probe_update_button.set_visible(False)
         self.probe_update_button.set_sensitive(False)
         if (device.get("kind") != "stlink" or not self.stlink_updater or
@@ -915,6 +918,10 @@ class FlashDeck(Adw.Application):
         if (generation != self.probe_update_check_generation or
                 device.get("kind") != "stlink" or device.get("serial") != serial):
             return False
+        self.probe_update_available_serial = None
+        self.probe_update_requires_restart_serial = None
+        self.probe_update_button.set_visible(False)
+        self.probe_update_button.set_sensitive(False)
         clean = self.clean_cli_output(output)
         available = self.probe_firmware_update_is_available(code, clean)
         if available:
@@ -923,6 +930,23 @@ class FlashDeck(Adw.Application):
             self.probe_update_button.set_sensitive(True)
             self.probe_update_button.set_tooltip_text("A bundled ST-LINK firmware update is available")
             self.append_log(f"\n⬆ ST-LINK firmware update available for {serial}\n")
+        elif "not in the dfu mode" in clean.lower():
+            # Older ST-LINK/V2 probes must restart once after the updater asks
+            # their running firmware to enter its USB loader. Keep the action
+            # visible so this required intermediate state is not mistaken for
+            # "no update available".
+            self.probe_update_requires_restart_serial = serial
+            self.probe_update_button.set_visible(True)
+            self.probe_update_button.set_sensitive(True)
+            self.probe_update_button.set_tooltip_text("Restart this ST-LINK/V2 to check for firmware updates")
+            self.append_log(
+                f"\n↻ ST-LINK/V2 {serial} must be unplugged and reconnected "
+                "before its firmware can be checked\n"
+            )
+        elif code == 0 and "up to date" in clean.lower():
+            self.append_log(f"\n✓ ST-LINK firmware is up to date for {serial}\n")
+        elif clean.strip():
+            self.append_log(f"\n⚠ Could not check ST-LINK firmware for {serial}\n{clean.rstrip()}\n")
         return False
 
     @staticmethod
@@ -932,6 +956,22 @@ class FlashDeck(Adw.Application):
     def on_probe_firmware_update(self, _button):
         device = self.selected_device() or {}
         serial = device.get("serial")
+        if (device.get("kind") == "stlink" and
+                serial == self.probe_update_requires_restart_serial):
+            dialog = Adw.MessageDialog.new(
+                self.window,
+                "Restart ST-LINK/V2 for update",
+                "ST’s V2 updater has prepared this probe to enter its USB firmware loader.\n\n"
+                "Unplug only this probe, plug it back in, and wait for its LED to settle. "
+                "Then choose Check again. Flash Deck will not write firmware until a separate confirmation."
+            )
+            dialog.add_response("cancel", "Cancel")
+            dialog.add_response("retry", "Check again")
+            dialog.set_response_appearance("retry", Adw.ResponseAppearance.SUGGESTED)
+            dialog.set_default_response("retry"); dialog.set_close_response("cancel")
+            dialog.connect("response", self.finish_probe_firmware_restart, serial)
+            dialog.present()
+            return
         if (device.get("kind") != "stlink" or
                 serial != self.probe_update_available_serial):
             self.probe_update_button.set_visible(False)
@@ -951,6 +991,24 @@ class FlashDeck(Adw.Application):
         dialog.set_default_response("no"); dialog.set_close_response("no")
         dialog.connect("response", self.finish_probe_firmware_update_confirmation, serial)
         dialog.present()
+
+    def finish_probe_firmware_restart(self, _dialog, response, serial):
+        if response != "retry":
+            return
+        device = self.selected_device() or {}
+        if device.get("kind") != "stlink" or device.get("serial") != serial:
+            self.toast("The selected probe changed; firmware check canceled")
+            return
+        command = self.stlink_updater_command(serial, "-checkVer")
+        if not command or self.running:
+            self.toast("ST-LINK updater is unavailable or another operation is running")
+            return
+        self.probe_update_button.set_sensitive(False)
+        self.append_log(f"\n$ Rechecking ST-LINK firmware for serial {serial}\n")
+        self.probe_update_check_generation += 1
+        generation = self.probe_update_check_generation
+        threading.Thread(target=self.check_probe_firmware_update_process,
+                         args=(command, serial, generation), daemon=True).start()
 
     def finish_probe_firmware_update_confirmation(self, _dialog, response, serial):
         if response != "update":
