@@ -10,6 +10,7 @@ import shlex
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -32,6 +33,9 @@ DEFAULT_CLI = Path.home() / "STMicroelectronics/STM32Cube/STM32CubeProgrammer/bi
 INSTALL_ROOT = DEFAULT_CLI.parent.parent
 PROFILE_PATH = Path.home() / ".config/flash-deck/profiles.json"
 REPORT_PATH = Path.home() / ".local/share/flash-deck/production-history.csv"
+KATAPULT_USB_ID = "1d50:6177"
+KLIPPER_USB_ID = "1d50:614e"
+GS_CAN_USB_ID = "1d50:606f"
 
 
 def locate_stlink_updater(cli):
@@ -57,10 +61,22 @@ def locate_cli():
     return shutil.which("STM32_Programmer_CLI")
 
 
+def locate_katapult_flashtool():
+    configured = os.environ.get("KATAPULT_FLASHTOOL")
+    candidates = [Path(configured)] if configured else []
+    candidates += [
+        Path.home() / "Projects/katapult/scripts/flashtool.py",
+        Path.home() / "katapult/scripts/flashtool.py",
+        Path.home() / "Projects/ht-reserve/third_party/katapult/scripts/flashtool.py",
+    ]
+    return str(next((candidate for candidate in candidates if candidate.is_file()), "")) or None
+
+
 class FlashDeck(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
         self.cli = locate_cli()
+        self.katapult_flashtool = locate_katapult_flashtool()
         self.stlink_updater = locate_stlink_updater(self.cli)
         self.firmware = None
         self.images = []
@@ -260,6 +276,7 @@ class FlashDeck(Adw.Application):
         self.connection_panel.add_css_class("subcard")
         connection_title = Gtk.Label(label="Connection settings", xalign=0)
         connection_title.add_css_class("section-title")
+        self.connection_title = connection_title
         self.connection_panel.append(connection_title)
         self.connection_panel.append(self.connection_settings_content())
         self.connect_button = Gtk.Button(label="Connect")
@@ -552,6 +569,13 @@ class FlashDeck(Adw.Application):
     def update_job_state(self):
         issues = []
         segments = []
+        device = self.selected_device() or {}
+        is_katapult = device.get("kind") == "katapult"
+        if is_katapult and self.images:
+            if len(self.images) != 1:
+                issues.append("Katapult accepts one Klipper application image at a time")
+            elif Path(self.images[0]["path"]).suffix.lower() != ".bin":
+                issues.append("Katapult requires a Klipper .bin application image")
         for image in self.images:
             if not Path(image["path"]).is_file():
                 issues.append(f"Missing file: {image['path']}")
@@ -566,7 +590,7 @@ class FlashDeck(Adw.Application):
                     if segment[0] <= old_end and old_start <= segment[1]:
                         issues.append(f"{Path(image['path']).name} overlaps {old_name}")
                 segments.append((*segment, Path(image["path"]).name))
-        if self.connected and segments:
+        if self.connected and segments and not is_katapult:
             regions = self.load_memory_map()
             for start, end, name in segments:
                 if not any(region["address"] <= start and end < region["address"] + region["size"] for region in regions):
@@ -577,8 +601,11 @@ class FlashDeck(Adw.Application):
             self.job_warning.set_visible(bool(issues))
         if hasattr(self, "flash_button"):
             enabled = self.connected and self.job_valid
-            verify_supported = enabled and all(Path(image["path"]).suffix.lower() != ".stm32" for image in self.images)
-            self.flash_button.set_sensitive(enabled); self.production_button.set_sensitive(enabled); self.verify_button.set_sensitive(verify_supported)
+            verify_supported = (enabled and not is_katapult and
+                                all(Path(image["path"]).suffix.lower() != ".stm32" for image in self.images))
+            self.flash_button.set_sensitive(enabled)
+            self.production_button.set_sensitive(enabled and not is_katapult)
+            self.verify_button.set_sensitive(verify_supported)
             self.verify_button.set_tooltip_text(None if verify_supported else "Read-only verification is unavailable for encrypted/proprietary .stm32 containers")
 
     @staticmethod
@@ -823,6 +850,7 @@ class FlashDeck(Adw.Application):
             "stlink": {"debug_port", "frequency", "mode", "access_port", "reset_mode", "shared_probe", "low_power_debug", "target_sel"},
             "dfu": {"dfu_pid", "dfu_vid"},
             "uart": {"uart_baud", "uart_parity", "uart_stop"},
+            "katapult": set(),
         }[kind]
         for key, widgets in self.setting_rows.items():
             for widget in widgets:
@@ -830,6 +858,9 @@ class FlashDeck(Adw.Application):
         self.connection_revealer.set_reveal_child(True)
         self.device_info_revealer.set_reveal_child(False)
         self.target_actions.set_visible(False)
+        is_katapult = kind == "katapult"
+        self.connection_title.set_label("Katapult bootloader" if is_katapult else "Connection settings")
+        self.connect_button.set_label("Inspect bootloader" if is_katapult else "Connect")
 
     def set_disconnected(self):
         self.connected = False
@@ -851,6 +882,21 @@ class FlashDeck(Adw.Application):
             self.verify_button.set_sensitive(False)
 
     def on_connect(self, _button):
+        device = self.selected_device()
+        if device and device["kind"] == "katapult":
+            if not self.katapult_flashtool:
+                self.toast("Katapult flashtool.py was not found")
+                return
+            self.connect_button.set_sensitive(False)
+            self.connect_button.set_label("Inspecting…")
+            self.target_status_icon.set_from_icon_name("network-wired-symbolic")
+            self.target_status_icon.set_tooltip_text("Inspecting Katapult")
+            command = [
+                sys.executable, self.katapult_flashtool,
+                "-d", device["path"], "-s",
+            ]
+            self.run_command(command, "Inspecting Katapult bootloader…", self.finish_connect)
+            return
         connect = self.connection_string()
         if not connect:
             self.toast("Select a probe first")
@@ -861,7 +907,10 @@ class FlashDeck(Adw.Application):
         self.run_cli(["-c", connect], "Connecting to target…", self.finish_connect)
 
     def finish_connect(self, code, output):
-        self.connect_button.set_sensitive(True); self.connect_button.set_label("Connect")
+        device = self.selected_device() or {}
+        is_katapult = device.get("kind") == "katapult"
+        self.connect_button.set_sensitive(True)
+        self.connect_button.set_label("Inspect bootloader" if is_katapult else "Connect")
         clean = self.clean_cli_output(output)
         failed = code != 0 or re.search(r"(?:DEV_[A-Z_]+|Unable to get core ID|\bError:)", clean, re.IGNORECASE)
         if failed:
@@ -876,8 +925,9 @@ class FlashDeck(Adw.Application):
         self.disconnect_button.set_opacity(1); self.disconnect_button.set_sensitive(True)
         self.populate_target_info(clean)
         self.connection_revealer.set_reveal_child(False)
-        self.device_info_revealer.set_reveal_child(True); self.target_actions.set_visible(True)
-        self.erase_button.set_sensitive(True)
+        self.device_info_revealer.set_reveal_child(True)
+        self.target_actions.set_visible(not is_katapult)
+        self.erase_button.set_sensitive(not is_katapult)
         self.update_job_state(); self.set_status("Connected", "success")
         self.check_probe_firmware_update()
 
@@ -1133,15 +1183,20 @@ class FlashDeck(Adw.Application):
 
     def populate_target_info(self, output):
         device = self.selected_device() or {}
-        interface = {"stlink": "ST-LINK / SWD", "dfu": "USB DFU", "uart": "UART bootloader"}.get(device.get("kind"), "—")
+        interface = {
+            "stlink": "ST-LINK / SWD", "dfu": "USB DFU",
+            "uart": "UART interface", "katapult": "Katapult / USB",
+        }.get(device.get("kind"), "—")
         def value(*labels):
             for label in labels:
                 match = re.search(rf"^\s*{re.escape(label)}\s*:\s*([^\r\n]+)", output, re.MULTILINE | re.IGNORECASE)
                 if match and match.group(1).strip() != "-": return match.group(1).strip()
             return "—"
         self.target_info["interface"].set_label(interface)
-        self.target_info["device"].set_label(value("Device name", "Device Name", "Board", "Board Name"))
-        self.target_info["device_id"].set_label(value("Device ID", "Device Id"))
+        self.target_info["device"].set_label(
+            device.get("product") or value("Device name", "Device Name", "Board", "Board Name"))
+        self.target_info["device_id"].set_label(
+            device.get("serial") or value("Device ID", "Device Id"))
         self.target_info["core"].set_label(value("Device CPU", "CPU", "Core"))
         self.target_info["flash"].set_label(value("Flash size", "Flash Size", "NVM size"))
         self.target_info["voltage"].set_label(value("Voltage", "Target voltage"))
@@ -1169,10 +1224,13 @@ class FlashDeck(Adw.Application):
             return " ".join(parts)
         if device["kind"] == "dfu":
             return f"port=USB1 sn={device['serial']} PID={self.dfu_pid.get_text().strip()} VID={self.dfu_vid.get_text().strip()}"
+        if device["kind"] == "katapult":
+            return None
         parity = ["EVEN", "NONE", "ODD"][self.uart_parity.get_selected()]
         stop = ["1", "2"][self.uart_stop.get_selected()]
         baud = ["115200", "57600", "9600", "230400", "460800"][self.uart_baud.get_selected()]
-        return f"port=/dev/{device['port']} br={baud} P={parity} db=8 sb={stop} fc=OFF"
+        path = device.get("path") or f"/dev/{device['port']}"
+        return f"port={path} br={baud} P={parity} db=8 sb={stop} fc=OFF"
 
     def connection_arguments(self, include_loaders=False):
         arguments = ["-c", self.connection_string()]
@@ -1279,6 +1337,109 @@ class FlashDeck(Adw.Application):
     def on_scan(self, _button):
         self.start_discovery()
 
+    @staticmethod
+    def parse_uart_inventory(output):
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", output)
+        records = []
+        for block in re.split(r"(?=^Port:\s*)", clean, flags=re.MULTILINE):
+            port_match = re.search(r"^Port:\s*(\S+)", block, re.MULTILINE)
+            if not port_match:
+                continue
+
+            def field(name):
+                match = re.search(rf"^{re.escape(name)}:\s*([^\r\n]+)", block, re.MULTILINE)
+                return match.group(1).strip() if match else ""
+
+            records.append({
+                "port": port_match.group(1),
+                "location": field("Location") or f"/dev/{port_match.group(1)}",
+                "description": field("Description"),
+                "manufacturer": field("Manufacturer"),
+            })
+        return records
+
+    @staticmethod
+    def udev_properties(device):
+        try:
+            process = subprocess.run(
+                ["udevadm", "info", "--query=property", f"--name={device}"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                timeout=3, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return {}
+        properties = {}
+        for line in process.stdout.splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                properties[key] = value
+        return properties
+
+    @staticmethod
+    def stable_serial_path(device):
+        try:
+            resolved = Path(device).resolve()
+            matches = [path for path in Path("/dev/serial/by-id").glob("*")
+                       if path.resolve() == resolved]
+            if matches:
+                return str(sorted(matches)[0])
+        except OSError:
+            pass
+        return device
+
+    @classmethod
+    def classify_serial_device(cls, record, properties):
+        port = record["port"]
+        if port.startswith("ttyS"):
+            return None, "built-in serial port"
+        vendor_id = properties.get("ID_VENDOR_ID", "").lower()
+        model_id = properties.get("ID_MODEL_ID", "").lower()
+        usb_id = f"{vendor_id}:{model_id}"
+        manufacturer = properties.get("ID_VENDOR", record.get("manufacturer", ""))
+        product = properties.get("ID_MODEL", record.get("description", ""))
+        identity = " ".join((manufacturer, product, record.get("description", ""))).lower()
+        path = cls.stable_serial_path(record["location"])
+        serial = properties.get("ID_SERIAL_SHORT") or properties.get("ID_SERIAL", "")
+
+        if usb_id == KATAPULT_USB_ID or "katapult" in identity:
+            name = product.replace("_", " ") or "Katapult"
+            return {
+                "kind": "katapult", "port": port, "path": path,
+                "serial": serial, "product": name,
+                "label": f"Katapult bootloader  ·  {name}  ·  {path}",
+            }, None
+        if usb_id == KLIPPER_USB_ID or "klipper" in identity:
+            return None, "Klipper application (not a bootloader)"
+        if usb_id == GS_CAN_USB_ID or "helix can-fd bridge" in identity:
+            return None, "shared CAN/RS485 carrier"
+        if "stlink" in identity or "st-link" in identity:
+            return None, "ST-LINK virtual COM port"
+        if any(word in identity for word in ("oscilloscope", "hanmatek", "hantek")):
+            return None, "instrument serial port"
+
+        serial_vendors = {"0403", "067b", "10c4", "1a86"}
+        serial_terms = ("serial", "uart", "ch340", "ch341", "cp210", "ft232", "ftdi")
+        if vendor_id in serial_vendors or any(term in identity for term in serial_terms):
+            name = product.replace("_", " ") or record.get("description") or "Serial adapter"
+            return {
+                "kind": "uart", "port": port, "path": path,
+                "serial": serial, "product": name,
+                "label": f"UART interface (unverified)  ·  {name}  ·  {path}",
+            }, None
+        return None, "unrecognized serial peripheral"
+
+    @classmethod
+    def discover_serial_devices(cls, output):
+        devices, ignored = [], []
+        for record in cls.parse_uart_inventory(output):
+            properties = cls.udev_properties(record["location"])
+            device, reason = cls.classify_serial_device(record, properties)
+            if device:
+                devices.append(device)
+            elif not record["port"].startswith("ttyS"):
+                ignored.append((record["location"], reason))
+        return devices, ignored
+
     def start_discovery(self):
         if self.running or not self.cli:
             return
@@ -1297,6 +1458,7 @@ class FlashDeck(Adw.Application):
         for interface in ("stlink", "usb", "uart"):
             process = subprocess.run([self.cli, "-l", interface], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             outputs[interface] = process.stdout
+        outputs["serial_devices"], outputs["ignored_serial"] = self.discover_serial_devices(outputs["uart"])
         GLib.idle_add(self.finish_discovery, outputs)
 
     def finish_discovery(self, outputs):
@@ -1314,10 +1476,7 @@ class FlashDeck(Adw.Application):
         for serial in re.findall(r"Serial Number\s*:\s*([^\r\n]+)", dfu):
             if serial.strip() and serial.strip() != "-":
                 devices.append({"kind": "dfu", "serial": serial.strip(), "label": f"USB DFU  ·  {serial.strip()}"})
-        uart = re.sub(r"\x1b\[[0-9;]*m", "", outputs["uart"])
-        for port in re.findall(r"^Port:\s*(\S+)", uart, re.MULTILINE):
-            if not port.startswith("ttyS"):
-                devices.append({"kind": "uart", "port": port, "label": f"UART bootloader  ·  /dev/{port}"})
+        devices.extend(outputs.get("serial_devices", []))
         self.devices = devices
         self.discovery_spinner.stop()
         if devices:
@@ -1329,6 +1488,8 @@ class FlashDeck(Adw.Application):
             self.append_log(f"✓ Discovery complete — {len(devices)} device{'s' if len(devices) != 1 else ''} found\n")
             for device in devices:
                 self.append_log(f"  • {device['label']}\n")
+            for path, reason in outputs.get("ignored_serial", []):
+                self.append_log(f"  · Ignored {path} — {reason}\n")
             self.select_profile_target()
         else:
             self.connection_revealer.set_reveal_child(False)
@@ -1392,11 +1553,36 @@ class FlashDeck(Adw.Application):
         if not self.connected:
             self.toast("Connect to the target first")
             return
+        device = self.selected_device() or {}
+        if device.get("kind") == "katapult":
+            if not self.katapult_flashtool:
+                self.toast("Katapult flashtool.py was not found")
+                return
+            if len(self.images) != 1 or Path(self.images[0]["path"]).suffix.lower() != ".bin":
+                self.toast("Choose one Klipper .bin image for Katapult")
+                return
+            command = [
+                sys.executable, self.katapult_flashtool,
+                "-d", device["path"], "-f", self.images[0]["path"],
+            ]
+            self.run_command(command, "Flashing Klipper through Katapult…",
+                             self.finish_katapult_flash)
+            return
         connect = self.connection_string()
         if not connect:
             self.toast("Select a probe first")
             return
         self.run_cli(self.flash_arguments(), "Flashing and verifying…")
+
+    def finish_katapult_flash(self, code, _output):
+        if code != 0:
+            return
+        self.set_disconnected()
+        self.connection_revealer.set_reveal_child(False)
+        self.device_info_revealer.set_reveal_child(False)
+        self.target_actions.set_visible(False)
+        self.append_log("✓ Klipper image verified; waiting for the device to re-enumerate\n")
+        GLib.timeout_add(1500, self.start_discovery)
 
     def flash_arguments(self):
         command = self.connection_arguments(include_loaders=True)
@@ -2412,19 +2598,30 @@ class FlashDeck(Adw.Application):
         self.memory_info.set_label(f"Page {page}  ·  {len(data)} bytes  ·  0x{address:08X}–0x{address + len(data) - 1:08X}")
 
     def run_cli(self, arguments, label, callback=None):
-        if self.running: return
         if not self.cli:
             self.append_log("\nCLI not found. Set STM32_PROGRAMMER_CLI to its executable path.\n")
             self.toast("STM32_Programmer_CLI was not found")
             return
-        self.running = True; self.flash_button.set_sensitive(False); self.verify_button.set_sensitive(False); self.production_button.set_sensitive(False); self.erase_button.set_sensitive(False)
+        self.run_command([self.cli, *arguments], label, callback)
+
+    def run_command(self, command, label, callback=None):
+        if self.running:
+            return
+        self.running = True
+        self.flash_button.set_sensitive(False); self.verify_button.set_sensitive(False)
+        self.production_button.set_sensitive(False); self.erase_button.set_sensitive(False)
         self.set_status(label, "working")
-        command = [self.cli, *arguments]
         self.append_log("\n$ " + shlex.join(command) + "\n")
         threading.Thread(target=self.run_process, args=(command, callback), daemon=True).start()
 
     def run_process(self, command, callback):
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        try:
+            process = subprocess.Popen(
+                command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=1)
+        except OSError as error:
+            GLib.idle_add(self.finish_process, -1, str(error), callback)
+            return
         output = ""
         for line in process.stdout:
             output += line

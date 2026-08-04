@@ -85,7 +85,27 @@ The selector beside **Probes** loads saved setups. The save icon creates or repl
 
 ### 1 Target
 
-The selector lists discovered ST-LINK, DFU, and usable UART interfaces. The refresh icon rescans. Selected text is shortened with an ellipsis when necessary; opening the menu shows complete entries.
+The selector lists discovered ST-LINK, DFU, genuine Katapult USB bootloaders,
+and likely UART adapters. Flash Deck checks Linux udev identity before adding a
+serial device: ST-LINK virtual COM ports, running Klipper devices, shared
+CAN/RS485 carriers, and instruments are not presented as UART bootloaders.
+Because a USB-to-UART adapter cannot prove what is wired to its far end, those
+entries are explicitly marked **UART interface (unverified)**. The refresh icon
+rescans. Selected text is shortened with an ellipsis when necessary; opening
+the menu shows complete entries.
+
+### Katapult
+
+A USB device identifying itself as Katapult appears as **Katapult bootloader**.
+Select it and choose **Inspect bootloader** to read its status without writing.
+Drop one Klipper application `.bin` built for the same MCU and bootloader
+offset, then choose **Flash and verify**. Flash Deck invokes Katapult's
+`flashtool.py`, which writes and verifies the application before rebooting.
+The Katapult entry normally disappears and the board re-enumerates as a
+`usb-Klipper_...` device for use in `printer.cfg`.
+
+Set `KATAPULT_FLASHTOOL` when the script is not in a standard local Katapult
+checkout.
 
 Before connection, the card contains transport-specific settings and **Connect**. After connection, it shows device information and target actions.
 
