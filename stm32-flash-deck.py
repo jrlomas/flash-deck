@@ -1051,7 +1051,10 @@ class FlashDeck(Adw.Application):
         if device.get("kind") != "stlink" or device.get("serial") != serial:
             self.toast("The selected probe changed; firmware check canceled")
             return
-        command = self.stlink_updater_command(serial, "-checkVer")
+        # The first -checkVer asks a running V2 to enter its loader. After the
+        # required physical reconnect it is already in DFU mode; repeating
+        # -checkVer would only start the restart cycle again.
+        command = self.stlink_updater_command(serial, "-checkDfuVer")
         if not command or self.running:
             self.toast("ST-LINK updater is unavailable or another operation is running")
             return
