@@ -72,6 +72,7 @@ class FlashDeck(Adw.Application):
         self.connected = False
         self.probe_update_available_serial = None
         self.probe_update_requires_restart_serial = None
+        self.probe_update_unsupported_serial = None
         self.probe_update_check_generation = 0
         self.running = False
         self.profiles = self.load_profiles()
@@ -835,6 +836,7 @@ class FlashDeck(Adw.Application):
         self.probe_update_check_generation += 1
         self.probe_update_available_serial = None
         self.probe_update_requires_restart_serial = None
+        self.probe_update_unsupported_serial = None
         if hasattr(self, "probe_update_button"):
             self.probe_update_button.set_visible(False)
             self.probe_update_button.set_sensitive(False)
@@ -890,13 +892,18 @@ class FlashDeck(Adw.Application):
         device = self.selected_device() or {}
         self.probe_update_available_serial = None
         self.probe_update_requires_restart_serial = None
+        self.probe_update_unsupported_serial = None
         self.probe_update_button.set_visible(device.get("kind") == "stlink")
         self.probe_update_button.set_sensitive(False)
         if (device.get("kind") != "stlink" or not self.stlink_updater or
                 not device.get("serial") or self.running):
             return
-        self.probe_update_button.set_tooltip_text("Checking ST-LINK firmware…")
         serial = device.get("serial")
+        self.probe_update_button.set_icon_name("software-update-available-symbolic")
+        if self.stlink_serial_looks_synthetic(serial):
+            self.show_unsupported_probe_firmware(serial)
+            return
+        self.probe_update_button.set_tooltip_text("Checking ST-LINK firmware…")
         command = self.stlink_updater_command(serial, "-checkVer")
         if not command:
             return
@@ -958,9 +965,45 @@ class FlashDeck(Adw.Application):
     def probe_firmware_update_is_available(code, output):
         return code == 0 and "up to date" not in output.lower() and "Firmware version detected:" in output
 
+    @staticmethod
+    def stlink_serial_looks_synthetic(serial):
+        candidates = [serial]
+        if len(serial) % 2 == 0:
+            try:
+                candidates.append(bytes.fromhex(serial).decode("ascii"))
+            except (ValueError, UnicodeDecodeError):
+                pass
+        return any(re.fullmatch(r"0+1", candidate) for candidate in candidates)
+
+    def show_unsupported_probe_firmware(self, serial):
+        self.probe_update_unsupported_serial = serial
+        self.probe_update_button.set_icon_name("dialog-warning-symbolic")
+        self.probe_update_button.set_visible(True)
+        self.probe_update_button.set_sensitive(True)
+        self.probe_update_button.set_tooltip_text("Official firmware update unavailable for this probe")
+        self.append_log(
+            f"\n⚠ ST-LINK/V2 {serial} has a synthetic USB serial and does not enter "
+            "ST’s supported firmware loader. It can program targets, but cannot safely "
+            "receive ST’s official probe firmware.\n"
+        )
+
     def on_probe_firmware_update(self, _button):
         device = self.selected_device() or {}
         serial = device.get("serial")
+        if (device.get("kind") == "stlink" and
+                serial == self.probe_update_unsupported_serial):
+            dialog = Adw.MessageDialog.new(
+                self.window,
+                "Official update unavailable",
+                "This V2 reports a synthetic USB serial and fails ST’s firmware-loader transition. "
+                "That normally identifies a clone or another nonstandard V2 implementation.\n\n"
+                "It can still be used to flash targets, but installing ST’s closed probe firmware "
+                "is not supported or safe on this hardware."
+            )
+            dialog.add_response("done", "Done")
+            dialog.set_default_response("done"); dialog.set_close_response("done")
+            dialog.present()
+            return
         if (device.get("kind") == "stlink" and
                 serial == self.probe_update_requires_restart_serial):
             dialog = Adw.MessageDialog.new(
