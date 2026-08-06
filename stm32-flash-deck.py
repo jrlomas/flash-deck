@@ -1472,10 +1472,8 @@ class FlashDeck(Adw.Application):
                 fw = self.value_in_probe(body, "ST-LINK FW") or "unknown firmware"
                 devices.append({"kind": "stlink", "serial": serial, "board": board, "firmware": fw,
                                 "label": f"ST-LINK / SWD  ·  {board}  ·  {serial}  ·  {fw}"})
-        dfu = re.sub(r"\x1b\[[0-9;]*m", "", outputs["usb"])
-        for serial in re.findall(r"Serial Number\s*:\s*([^\r\n]+)", dfu):
-            if serial.strip() and serial.strip() != "-":
-                devices.append({"kind": "dfu", "serial": serial.strip(), "label": f"USB DFU  ·  {serial.strip()}"})
+        for serial in self.parse_dfu_serials(outputs["usb"]):
+            devices.append({"kind": "dfu", "serial": serial, "label": f"USB DFU  ·  {serial}"})
         devices.extend(outputs.get("serial_devices", []))
         self.devices = devices
         self.discovery_spinner.stop()
@@ -1528,7 +1526,7 @@ class FlashDeck(Adw.Application):
 
     def finish_generic_scan(self, output):
         if self.transport.get_selected() == 1:
-            serials = re.findall(r"Serial Number\s*:\s*([^\r\n]+)", output)
+            serials = re.findall(r"Serial Number\s*:\s*([^\r\n]+)", output, re.IGNORECASE)
             devices = [f"DFU device · {serial.strip()}" for serial in serials if serial.strip() and serial.strip() != "-"]
         else:
             devices = [f"UART · /dev/{port}" for port in re.findall(r"^Port:\s*(\S+)", output, re.MULTILINE) if not port.startswith("ttyS")]
@@ -1545,6 +1543,16 @@ class FlashDeck(Adw.Application):
     def value_in_probe(body, label):
         match = re.search(rf"{re.escape(label)}\s*:\s*([^\r\n]+)", body)
         return match.group(1).strip() if match else None
+
+    @staticmethod
+    def parse_dfu_serials(output):
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", output)
+        return [
+            serial.strip()
+            for serial in re.findall(
+                r"Serial Number\s*:\s*([^\r\n]+)", clean, re.IGNORECASE)
+            if serial.strip() and serial.strip() != "-"
+        ]
 
     def on_flash(self, _button):
         if not self.images or not getattr(self, "job_valid", False):

@@ -72,6 +72,15 @@ class SerialDiscoveryTests(unittest.TestCase):
         self.assertEqual(device["kind"], "uart")
         self.assertIn("unverified", device["label"])
 
+    def test_cubeprogrammer_dfu_serial_label_is_case_insensitive(self):
+        output = """
+  Device Index           : USB1
+  Product ID             : STM32  BOOTLOADER
+  Serial number          : FFFFFFFEFFFF
+"""
+        serials = APP.FlashDeck.parse_dfu_serials(output)
+        self.assertEqual(serials, ["FFFFFFFEFFFF"])
+
 
 if __name__ == "__main__":
     unittest.main()
