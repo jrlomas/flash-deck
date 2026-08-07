@@ -3,9 +3,9 @@
 This directory contains the reproducible tooling used to give the tested
 standalone ST-LINK/V2 clone one USB identity in both loader and application
 mode. It intentionally supports only explicitly audited 16 KiB loader hashes
-listed in `prepare.py`. The first two observed loaders have identical vectors,
-code, formatter, and descriptor; they differ only in three tail metadata/checksum
-bytes. Unknown firmware still fails closed.
+listed in `prepare.py`. The observed loaders have identical vectors, code,
+formatter, and descriptor; they differ only in tail metadata/checksum bytes.
+Unknown firmware still fails closed.
 
 This operation rewrites two pages inside the protected ST-LINK bootloader and
 can brick a probe. Use a sacrificial clone first. Never use a target connector

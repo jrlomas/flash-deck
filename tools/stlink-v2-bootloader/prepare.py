@@ -13,6 +13,8 @@ KNOWN_IMAGES = {
         "loader metadata 0x4d / trailer 0x072c",
     "61a6dc5aa3a5cb68b7fe09c8a93eec8d49b732df7352ba3fc429c916bea57e38":
         "loader metadata 0x4f / trailer 0x4729",
+    "04d08466c2b452c2e6065103ed9dc91ef3370628ad0bd6539502dbad22e71c32":
+        "loader metadata 0x4f / trailer 0x072c",
 }
 KNOWN_SIZE = 0x4000
 FORMATTER_OFFSET = 0x11E0
