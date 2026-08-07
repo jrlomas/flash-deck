@@ -8,7 +8,12 @@ import struct
 import zlib
 from pathlib import Path
 
-KNOWN_SHA256 = "510909fd7f2a85a0b3f9fed6c41a6dfc4bb9925f6b084fd94ef8715958334481"
+KNOWN_IMAGES = {
+    "510909fd7f2a85a0b3f9fed6c41a6dfc4bb9925f6b084fd94ef8715958334481":
+        "loader metadata 0x4d / trailer 0x072c",
+    "61a6dc5aa3a5cb68b7fe09c8a93eec8d49b732df7352ba3fc429c916bea57e38":
+        "loader metadata 0x4f / trailer 0x4729",
+}
 KNOWN_SIZE = 0x4000
 FORMATTER_OFFSET = 0x11E0
 DESCRIPTOR_OFFSET = 0x2A40
@@ -35,7 +40,7 @@ def main():
     digest = hashlib.sha256(original).hexdigest()
     if len(original) != KNOWN_SIZE:
         raise SystemExit(f"refusing bootloader size {len(original)}; expected {KNOWN_SIZE}")
-    if digest != KNOWN_SHA256:
+    if digest not in KNOWN_IMAGES:
         raise SystemExit(f"refusing unknown bootloader SHA-256 {digest}")
     if struct.unpack_from("<II", original) != (0x20000800, 0x08002765):
         raise SystemExit("refusing unexpected bootloader vector table")
@@ -82,6 +87,7 @@ def main():
     manifest = {
         "serial": args.serial,
         "source_sha256": digest,
+        "source_variant": KNOWN_IMAGES[digest],
         "original_crc32": f"{original_crc:08x}",
         "patched_crc32": f"{patched_crc:08x}",
         "patched_sha256": hashlib.sha256(patched).hexdigest(),

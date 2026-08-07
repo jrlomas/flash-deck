@@ -22,7 +22,7 @@ Prepare or install a unique serial in a standalone ST-LINK/V2 clone.
 Usage:
   stlink-v2-clone-serial.zsh prepare SERIAL [OUTPUT_DIR]
   stlink-v2-clone-serial.zsh inspect TOPOLOGY
-  stlink-v2-clone-serial.zsh load TOPOLOGY FIRMWARE
+  stlink-v2-clone-serial.zsh load TOPOLOGY TEMPORARY_FIRMWARE
   stlink-v2-clone-serial.zsh enter TOPOLOGY PATCHED_UPDATER
   stlink-v2-clone-serial.zsh check TOPOLOGY PATCHED_UPDATER [CURRENT_SERIAL]
   stlink-v2-clone-serial.zsh program TOPOLOGY PATCHED_UPDATER
@@ -202,7 +202,7 @@ load_probe() {
   [[ -r $firmware ]] || die "firmware image not found: $firmware"
   tool=$(command -v "$tool") || die "stlink-tool not found (install it or set STLINK_TOOL)"
 
-  print -r -- "About to replace the application slot only on the ST-LINK/V2 at $topology."
+  print -r -- "About to load temporary firmware into the application slot on the ST-LINK/V2 at $topology."
   inspect_probe "$topology"
   print -n -r -- "Type the topology '$topology' to continue: "
   local confirmation
@@ -299,7 +299,7 @@ case $command_name in
     inspect_probe "$1"
     ;;
   load)
-    (( $# == 2 )) || die "load requires TOPOLOGY and FIRMWARE"
+    (( $# == 2 )) || die "load requires TOPOLOGY and TEMPORARY_FIRMWARE"
     load_probe "$@"
     ;;
   enter)

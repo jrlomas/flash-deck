@@ -2,9 +2,10 @@
 
 This directory contains the reproducible tooling used to give the tested
 standalone ST-LINK/V2 clone one USB identity in both loader and application
-mode. It intentionally supports only the exact 16 KiB loader whose SHA-256 is
-`510909fd7f2a85a0b3f9fed6c41a6dfc4bb9925f6b084fd94ef8715958334481`.
-Unknown firmware fails closed.
+mode. It intentionally supports only explicitly audited 16 KiB loader hashes
+listed in `prepare.py`. The first two observed loaders have identical vectors,
+code, formatter, and descriptor; they differ only in three tail metadata/checksum
+bytes. Unknown firmware still fails closed.
 
 This operation rewrites two pages inside the protected ST-LINK bootloader and
 can brick a probe. Use a sacrificial clone first. Never use a target connector
@@ -78,9 +79,19 @@ tools/stlink-v2-bootloader/invoke_patch.py \
   --topology "$topology" --manifest "$work/manifest.json" --write
 ```
 
-Cold reconnect and verify the loader serial. Restore the matching 12-character
-V2J48S7 application prepared by `scripts/stlink-v2-clone-serial.zsh`, cold
-reconnect again, and complete the checks in
+Cold reconnect and verify the loader serial. Restore the matching encrypted
+12-character V2J48S7 updater prepared by
+`scripts/stlink-v2-clone-serial.zsh`:
+
+```sh
+scripts/stlink-v2-clone-serial.zsh program \
+  "$topology" "build/stlink-serial/$serial/STLinkUpgrade.jar"
+```
+
+Use `load` only for the temporary dumper and patcher. One audited V2J37 loader
+accepted direct application bytes but remained in transitional mode until the
+official encrypted updater finalized its application metadata. After the
+official update succeeds, cold reconnect and complete the checks in
 `docs/STLINK_CLONE_REPAIR.md`.
 
 The preflight is idempotent. Re-running it on a repaired loader verifies the
