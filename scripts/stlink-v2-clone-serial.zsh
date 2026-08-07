@@ -22,18 +22,23 @@ Prepare or install a unique serial in a standalone ST-LINK/V2 clone.
 Usage:
   stlink-v2-clone-serial.zsh prepare SERIAL [OUTPUT_DIR]
   stlink-v2-clone-serial.zsh inspect TOPOLOGY
+  stlink-v2-clone-serial.zsh load TOPOLOGY FIRMWARE
+  stlink-v2-clone-serial.zsh enter TOPOLOGY PATCHED_UPDATER
   stlink-v2-clone-serial.zsh check TOPOLOGY PATCHED_UPDATER [CURRENT_SERIAL]
   stlink-v2-clone-serial.zsh program TOPOLOGY PATCHED_UPDATER
 
 Examples:
-  scripts/stlink-v2-clone-serial.zsh prepare F1A5DEC00000000000000002
+  scripts/stlink-v2-clone-serial.zsh prepare F1A5DEC00002
   scripts/stlink-v2-clone-serial.zsh inspect 1-8.3
-  scripts/stlink-v2-clone-serial.zsh check 1-8.3 build/stlink-serial/F1A5DEC00000000000000002/STLinkUpgrade.jar
-  scripts/stlink-v2-clone-serial.zsh program 1-8.3 build/stlink-serial/F1A5DEC00000000000000002/STLinkUpgrade.jar
+  scripts/stlink-v2-clone-serial.zsh load 1-8.3 build/stlink-bootloader/F1A5DEC00002/bootdump.bin
+  scripts/stlink-v2-clone-serial.zsh enter 1-8.3 build/stlink-serial/F1A5DEC00002/STLinkUpgrade.jar
+  scripts/stlink-v2-clone-serial.zsh check 1-8.3 build/stlink-serial/F1A5DEC00002/STLinkUpgrade.jar
+  scripts/stlink-v2-clone-serial.zsh program 1-8.3 build/stlink-serial/F1A5DEC00002/STLinkUpgrade.jar
 
 Environment overrides:
   STM32CUBE_PROGRAMMER_ROOT   STM32CubeProgrammer installation root
   STLINK_DECRYPTOR_JAR        Path to lujji/st-decrypt st_decrypt.jar
+  STLINK_TOOL                 Path to jeanthom/stlink-tool
 
 Prepare the decryptor dependency with:
   git clone https://github.com/lujji/st-decrypt.git tools/st-decrypt
@@ -50,7 +55,7 @@ require_command() {
 
 validate_serial() {
   local serial=$1
-  [[ ${#serial} == 24 ]] || die "serial must contain exactly 24 hexadecimal characters"
+  [[ ${#serial} == 12 ]] || die "serial must contain exactly 12 hexadecimal characters"
   [[ $serial == [0-9A-F]## ]] || die "serial must use uppercase hexadecimal characters only"
 }
 
@@ -60,9 +65,18 @@ cube_paths() {
   STOCK_UPDATER="$UPGRADE_DIR/STLinkUpgrade.jar"
   JAVA_BIN="$CUBE_ROOT/bin/jre/bin/java"
   DECRYPTOR=${STLINK_DECRYPTOR_JAR:-$DEFAULT_DECRYPTOR}
+  DECRYPTOR_LIB="${DECRYPTOR:h:h}/lib/commons-cli-1.3.1/commons-cli-1.3.1.jar"
 
   [[ -x $JAVA_BIN ]] || die "CubeProgrammer Java runtime not found: $JAVA_BIN"
   [[ -r $STOCK_UPDATER ]] || die "ST-Link updater not found: $STOCK_UPDATER"
+}
+
+run_decryptor() {
+  if [[ -r $DECRYPTOR_LIB ]]; then
+    "$JAVA_BIN" -cp "$DECRYPTOR:$DECRYPTOR_LIB" st_decrypt.ST_decrypt "$@"
+  else
+    "$JAVA_BIN" -jar "$DECRYPTOR" "$@"
+  fi
 }
 
 prepare_updater() {
@@ -89,24 +103,42 @@ prepare_updater() {
   local image_size=$(wc -c < "$temp/original.encrypted.bin")
   (( image_size > 0 && image_size % 16 == 0 )) || die "unexpected encrypted firmware size: $image_size"
 
-  "$JAVA_BIN" -jar "$DECRYPTOR" --key "$AES_KEY" \
+  run_decryptor --key "$AES_KEY" \
     -i "$temp/original.encrypted.bin" -o "$temp/decrypted.padded.bin"
   dd if="$temp/decrypted.padded.bin" of="$temp/decrypted.bin" \
     bs="$image_size" count=1 status=none
 
   cp "$temp/decrypted.bin" "$temp/patched.decrypted.bin"
+  # Match the protected loader descriptor width so both USB modes can expose
+  # one identity. Keep the unused tail in place to avoid shifting firmware.
   SERIAL_TO_PATCH=$serial perl -0777 -pi -e '
     BEGIN {
       $s = $ENV{"SERIAL_TO_PATCH"};
-      @c = split(//, $s);
-      $last = pop @c;
-      $replacement = join("", map { $_ . "\x00" } @c) . $last;
+      $replacement = "\x1a\x03" . join("", map { $_ . "\x00" } split(//, $s));
     }
-    $count = s/\x32\x03(?:[0-9A-F]\x00){23}[0-9A-F]/"\x32\x03" . $replacement/e;
-    END { die "expected exactly one legacy USB serial descriptor, patched $count\n" unless $count == 1; }
+    @matches = ($_ =~ /\x32\x03(?:[0-9A-F]\x00){23}[0-9A-F]/g);
+    die "expected exactly one legacy USB serial descriptor\n" unless @matches == 1;
+    $offset = index($_, $matches[0]);
+    substr($_, $offset, length($replacement), $replacement);
   ' "$temp/patched.decrypted.bin"
 
-  "$JAVA_BIN" -jar "$DECRYPTOR" --key "$AES_KEY" \
+  # At startup V2J48 replaces the serial descriptor above with one generated
+  # from the STM32F1 silicon UID. Many clones expose the same synthetic UID,
+  # producing the colliding USB iSerial "000000000001". Keep the patched
+  # descriptor by returning immediately from that formatter. Every anchor is
+  # checked exactly so a future ST firmware layout change fails closed.
+  perl -0777 -pi -e '
+    BEGIN {
+      $formatter = pack("H*", "f0b4434900bb08684a688968002856d0");
+      $return = pack("H*", "704700bf"); # bx lr; nop
+    }
+    $offset = index($_, $formatter);
+    die "USB serial formatter anchor was not unique\n"
+      if $offset < 0 || index($_, $formatter, $offset + 1) >= 0;
+    substr($_, $offset, length($return), $return);
+  ' "$temp/patched.decrypted.bin"
+
+  run_decryptor --key "$AES_KEY" \
     -i "$temp/patched.decrypted.bin" -o "$temp/patched.encrypted.padded.bin" --encrypt
   dd if="$temp/patched.encrypted.padded.bin" of="$temp/f2_3.bin" \
     bs="$image_size" count=1 status=none
@@ -161,6 +193,34 @@ inspect_probe() {
   print -r -- "usb_serial=$serial"
 }
 
+load_probe() {
+  local topology=$1
+  local firmware=${2:A}
+  local tool=${STLINK_TOOL:-stlink-tool}
+
+  resolve_probe "$topology"
+  [[ -r $firmware ]] || die "firmware image not found: $firmware"
+  tool=$(command -v "$tool") || die "stlink-tool not found (install it or set STLINK_TOOL)"
+
+  print -r -- "About to replace the application slot only on the ST-LINK/V2 at $topology."
+  inspect_probe "$topology"
+  print -n -r -- "Type the topology '$topology' to continue: "
+  local confirmation
+  read -r confirmation
+  [[ $confirmation == $topology ]] || die "confirmation did not match; nothing was written"
+
+  pkexec /usr/bin/bwrap \
+    --ro-bind / / \
+    --tmpfs /sys/bus/usb/devices \
+    --dir "/sys/bus/usb/devices/$topology" \
+    --ro-bind "$SYSFS_REAL" "/sys/bus/usb/devices/$topology" \
+    --dev /dev \
+    --dir /dev/bus --dir /dev/bus/usb --dir "/dev/bus/usb/$BUS_PADDED" \
+    --dev-bind "$USB_NODE" "$USB_NODE" \
+    --proc /proc \
+    "$tool" "$firmware"
+}
+
 isolated_updater() {
   local topology=$1
   local updater=$2
@@ -197,6 +257,12 @@ check_probe() {
   fi
 }
 
+enter_probe() {
+  local topology=$1
+  local updater=$2
+  isolated_updater "$topology" "$updater" -checkVer
+}
+
 program_probe() {
   local topology=$1
   local updater=$2
@@ -231,6 +297,14 @@ case $command_name in
   inspect)
     (( $# == 1 )) || die "inspect requires TOPOLOGY"
     inspect_probe "$1"
+    ;;
+  load)
+    (( $# == 2 )) || die "load requires TOPOLOGY and FIRMWARE"
+    load_probe "$@"
+    ;;
+  enter)
+    (( $# == 2 )) || die "enter requires TOPOLOGY and PATCHED_UPDATER"
+    enter_probe "$@"
     ;;
   check)
     (( $# >= 2 && $# <= 3 )) || die "check requires TOPOLOGY, PATCHED_UPDATER, and optional CURRENT_SERIAL"
