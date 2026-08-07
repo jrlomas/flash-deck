@@ -4,7 +4,7 @@ Flash Deck is a modern GTK 4 interface for everyday STM32 programming. It wraps 
 
 ## Highlights
 
-- Automatic ST-LINK, USB DFU, and UART discovery
+- Automatic discovery of identity-verified ST-LINK, USB DFU, and Katapult targets
 - Explicit connect/disconnect lifecycle with live target information
 - Drag-and-drop BIN, Intel HEX, ELF, S-record, and STM32 firmware jobs
 - Multi-image flashing, exact verification, erase, reset, and external loaders

@@ -61,16 +61,29 @@ class SerialDiscoveryTests(unittest.TestCase):
         self.assertIsNone(device)
         self.assertIn("carrier", reason)
 
-    def test_common_usb_serial_adapter_remains_available_but_unverified(self):
+    def test_generic_usb_serial_adapter_is_not_presented_as_a_target(self):
         device, reason = APP.FlashDeck.classify_serial_device(
             self.record("USB Single Serial", "1a86"), {
                 "ID_VENDOR_ID": "1a86",
                 "ID_MODEL_ID": "55d4",
                 "ID_MODEL": "USB_Single_Serial",
+                "ID_USB_INTERFACES": ":020201:0a0000:",
+                "ID_USB_DRIVER": "cdc_acm",
             })
-        self.assertIsNone(reason)
-        self.assertEqual(device["kind"], "uart")
-        self.assertIn("unverified", device["label"])
+        self.assertIsNone(device)
+        self.assertIn("USB-to-UART transport", reason)
+
+    def test_unknown_cdc_uart_is_filtered_without_vendor_hardcoding(self):
+        device, reason = APP.FlashDeck.classify_serial_device(
+            self.record("Development console", "Example Corp"), {
+                "ID_VENDOR_ID": "dead",
+                "ID_MODEL_ID": "beef",
+                "ID_MODEL": "Development_console",
+                "ID_USB_INTERFACES": ":020201:0a0000:",
+                "ID_USB_DRIVER": "cdc_acm",
+            })
+        self.assertIsNone(device)
+        self.assertIn("target identity is not available", reason)
 
     def test_cubeprogrammer_dfu_serial_label_is_case_insensitive(self):
         output = """

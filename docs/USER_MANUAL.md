@@ -85,14 +85,14 @@ The selector beside **Probes** loads saved setups. The save icon creates or repl
 
 ### 1 Target
 
-The selector lists discovered ST-LINK, DFU, genuine Katapult USB bootloaders,
-and likely UART adapters. Flash Deck checks Linux udev identity before adding a
-serial device: ST-LINK virtual COM ports, running Klipper devices, shared
-CAN/RS485 carriers, and instruments are not presented as UART bootloaders.
-Because a USB-to-UART adapter cannot prove what is wired to its far end, those
-entries are explicitly marked **UART interface (unverified)**. The refresh icon
-rescans. Selected text is shortened with an ellipsis when necessary; opening
-the menu shows complete entries.
+The selector lists discovered ST-LINK, DFU, and genuine Katapult USB
+bootloaders. Flash Deck checks Linux udev identity before adding a serial
+device: ST-LINK virtual COM ports, running Klipper devices, shared CAN/RS485
+carriers, instruments, and generic USB-to-UART bridges are not presented as
+targets. A USB-to-UART bridge identifies only its transport chip, not the MCU
+wired to its far end, and Flash Deck does not send disruptive protocol probes
+during discovery. The refresh icon rescans. Selected text is shortened with an
+ellipsis when necessary; opening the menu shows complete entries.
 
 ### Katapult
 
@@ -154,7 +154,9 @@ DFU entries identify a USB serial and use the displayed VID/PID. The STM32 must 
 
 ### UART
 
-Choose the baud rate, parity, and stop bits required by the STM32 ROM bootloader and board wiring. Flash Deck excludes ordinary built-in `ttyS` ports from automatic results.
+UART connection settings are retained for explicitly identified STM32 UART
+targets. Generic USB-to-UART bridges and ordinary built-in `ttyS` ports are not
+automatic targets: neither one exposes the identity of the MCU on its far end.
 
 ## 6. Firmware jobs
 
@@ -315,7 +317,6 @@ Confirm `STM32_Programmer_CLI` exists and is executable, or use the environment 
 - Reconnect USB and refresh.
 - Confirm ST's udev rules.
 - Check cables, power, and USB hubs.
-- Ensure a UART port is not open elsewhere.
 - Confirm an intended DFU target is actually in DFU mode.
 
 ### ST-LINK connection fails

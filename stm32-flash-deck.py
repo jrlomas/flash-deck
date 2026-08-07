@@ -1417,15 +1417,23 @@ class FlashDeck(Adw.Application):
         if any(word in identity for word in ("oscilloscope", "hanmatek", "hantek")):
             return None, "instrument serial port"
 
-        serial_vendors = {"0403", "067b", "10c4", "1a86"}
-        serial_terms = ("serial", "uart", "ch340", "ch341", "cp210", "ft232", "ftdi")
-        if vendor_id in serial_vendors or any(term in identity for term in serial_terms):
-            name = product.replace("_", " ") or record.get("description") or "Serial adapter"
-            return {
-                "kind": "uart", "port": port, "path": path,
-                "serial": serial, "product": name,
-                "label": f"UART interface (unverified)  ·  {name}  ·  {path}",
-            }, None
+        # A USB-to-UART bridge identifies only the transport chip. Its USB
+        # descriptors cannot tell whether the far end is an STM32 ROM
+        # bootloader, an ESP32, an instrument, or an arbitrary application.
+        # Do not present ambiguous transport hardware as a flashable target.
+        # Actively sending the STM32 0x7f synchronization byte here is also
+        # inappropriate: it can disturb applications and consumes the ROM
+        # bootloader's initial synchronization state.
+        usb_interfaces = properties.get("ID_USB_INTERFACES", "").lower()
+        usb_driver = properties.get("ID_USB_DRIVER", "").lower()
+        serial_terms = ("serial", "uart", "ch340", "ch341", "ch910", "cp210", "ft232", "ftdi")
+        is_serial_transport = (
+            ":0202" in usb_interfaces or ":0a00" in usb_interfaces or
+            usb_driver in {"cdc_acm", "ch341", "cp210x", "ftdi_sio", "pl2303"} or
+            any(term in identity for term in serial_terms)
+        )
+        if is_serial_transport:
+            return None, "generic USB-to-UART transport (target identity is not available over USB)"
         return None, "unrecognized serial peripheral"
 
     @classmethod
