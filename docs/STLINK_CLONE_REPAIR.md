@@ -22,7 +22,7 @@ different serial.
 | --- | --- | --- |
 | `F1A5DEC00001` | Pending | Older clone; current loader and application state not yet inventoried. |
 | `F1A5DEC00002` | Complete | Former intermediate application-only probe. Two matching loader captures have SHA-256 `61a6dc5aa3a5cb68b7fe09c8a93eec8d49b732df7352ba3fc429c916bea57e38` and CRC32 `58b520d7`; patched CRC32 `a544aaea` verified on-device. This audited variant differs from probe 00005 only at three tail metadata/checksum bytes. Cold device 40 and V2J48S7 both report `F1A5DEC00002`; CubeProgrammer reports `463141354445433030303032`. |
-| `F1A5DEC00003` | Pending | Older clone; previously generated 24-character application artifact is obsolete. |
+| `F1A5DEC00003` | Complete | Original audited loader variant: two matching captures have SHA-256 `510909fd7f2a85a0b3f9fed6c41a6dfc4bb9925f6b084fd94ef8715958334481` and CRC32 `433f7d29`; patched CRC32 `7324825c` verified on-device. Cold device 46 and V2J48S7 both report `F1A5DEC00003`; CubeProgrammer reports `463141354445433030303033`. |
 | `F1A5DEC00004` | Pending | Older clone; previously generated 24-character application artifact is obsolete. |
 | `F1A5DEC00005` | Complete | Sacrificial broken-target-connector probe. Bootloader CRC changed from `433f7d29` to verified `b2cab72f`; cold device 28 and V2J48S7 both report `F1A5DEC00005`. CubeProgrammer reports the equivalent `463141354445433030303035`. The repository-built idempotent patcher was subsequently live-tested and returned `already patched and verified` without writing. |
 
